@@ -1,0 +1,23 @@
+# Pinned to exact versions verified against this plan's code during development
+# (installed + introspected directly, Oct 2026). Bump deliberately, not by accident --
+# several of these APIs (langgraph v3 streaming, langchain-openrouter) are young.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+langchain==1.4.3
+langgraph==1.2.14
+langchain-openrouter==0.2.9
+langgraph-checkpoint-postgres==3.1.2
+psycopg[binary,pool]==3.3.6
+pydantic-settings==2.15.0
+ddgs==9.16.0
+numexpr==2.14.2
+yfinance==1.7.0
+requests==2.34.2
+beautifulsoup4==4.15.0
+sumy==0.13.0
+nltk==3.10.3
+tenacity==9.2.1
+aiobreaker==1.2.0
+cachetools==7.2.1
+slowapi==0.1.10
+httpx==0.28.1
