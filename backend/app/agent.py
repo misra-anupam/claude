@@ -5,6 +5,7 @@ from langgraph.store.base import BaseStore
 
 from .config import settings
 from .tools import build_tool_list
+from .utils.reasoning_merge import ReasoningDetailsMergeCallback
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant with access to web search, a calculator, "
@@ -24,6 +25,7 @@ def build_agent_graph(checkpointer: BaseCheckpointSaver, store: BaseStore):
         openrouter_api_key=settings.openrouter_api_key,
         reasoning={"max_tokens": settings.reasoning_max_tokens},
         streaming=True,
+        callbacks=[ReasoningDetailsMergeCallback()],
     )
     tools = build_tool_list(store)
     return create_agent(
