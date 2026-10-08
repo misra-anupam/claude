@@ -21,8 +21,9 @@ SYSTEM_PROMPT = (
     "an image generation tool (generate_image) for illustrations and other "
     "visuals that aren't data charts, and document generation tools "
     "(generate_html, generate_pdf) for downloadable report-style documents, "
-    "plus persistent memory tools (save_memory, search_memory) scoped to "
-    "this one user. "
+    "persistent memory tools (save_memory, search_memory) scoped to this "
+    "one user, and possibly additional tools provided by connected external "
+    "MCP servers. "
     "Call save_memory when the user shares a durable personal fact worth "
     "remembering across conversations. Call search_memory when recalling "
     "something the user may have told you before would help answer their "
@@ -39,6 +40,7 @@ def build_agent_graph(
     caches: dict[str, TTLCache],
     http_client: httpx.AsyncClient,
     artifacts: TTLCache,
+    mcp_tools: list | None = None,
 ):
     # NOTE: deliberately NOT using `.with_retry()` here -- it wraps the model in
     # a generic `RunnableRetry`, which doesn't expose `.bind_tools()`, and
@@ -57,7 +59,7 @@ def build_agent_graph(
     )
 
     tools = build_tool_list(
-        store, breakers, tool_semaphores, caches, http_client, artifacts
+        store, breakers, tool_semaphores, caches, http_client, artifacts, mcp_tools
     )
     return create_agent(
         model=model,

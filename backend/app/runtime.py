@@ -13,6 +13,7 @@ from .artifacts import build_artifact_store
 from .checkpointer import get_checkpointer
 from .config import Settings
 from .db import wait_for_postgres
+from .mcp_tools import load_mcp_tools
 from .resilience.cache import build_caches
 from .resilience.circuit_breaker import (
     EXTERNAL_TOOL_NAMES,
@@ -51,8 +52,16 @@ async def build_runtime(settings: Settings) -> AgentRuntime:
     # Tighter cap for sandbox_exec -- each call spins up a real container on
     # the host, matching the executor service's own max_concurrent=4 limit.
     tool_semaphores.update({name: asyncio.Semaphore(2) for name in NO_CACHE_TOOL_NAMES})
+    mcp_tools = await load_mcp_tools(settings)
     graph = build_agent_graph(
-        checkpointer, store, breakers, tool_semaphores, caches, http_client, artifacts
+        checkpointer,
+        store,
+        breakers,
+        tool_semaphores,
+        caches,
+        http_client,
+        artifacts,
+        mcp_tools,
     )
     return AgentRuntime(
         graph=graph,

@@ -152,8 +152,19 @@
             transcript.scrollTop = transcript.scrollHeight;
           });
         } else {
+          // MCP tool results come back as an array of content blocks
+          // ([{"type":"text","text":"..."}]) rather than a plain string --
+          // join the text blocks for display instead of dumping raw JSON.
+          let displayText;
+          if (Array.isArray(result) && result.every((b) => b && typeof b === "object" && "text" in b)) {
+            displayText = result.map((b) => b.text).join("\n");
+          } else if (typeof result === "string") {
+            displayText = result;
+          } else {
+            displayText = JSON.stringify(result);
+          }
           resultEl.hidden = false;
-          resultEl.textContent = typeof result === "string" ? result : JSON.stringify(result);
+          resultEl.textContent = displayText;
         }
         transcript.scrollTop = transcript.scrollHeight;
       },

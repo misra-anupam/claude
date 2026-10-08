@@ -23,3 +23,5 @@ slowapi==0.1.10
 httpx==0.28.1
 matplotlib==3.11.2
 reportlab==5.0.1
+mcp==1.30.0
+langchain-mcp-adapters==0.3.2

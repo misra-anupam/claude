@@ -23,6 +23,7 @@ def build_tool_list(
     caches: dict[str, TTLCache],
     http_client: httpx.AsyncClient,
     artifacts: TTLCache,
+    mcp_tools: list | None = None,
 ) -> list:
     return [
         build_web_search_tool(
@@ -46,4 +47,5 @@ def build_tool_list(
         ),
         *build_document_tools(artifacts),
         *build_memory_tools(store),
+        *(mcp_tools or []),
     ]

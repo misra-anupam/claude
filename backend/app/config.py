@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # completions endpoint, billed through the one OpenRouter account.
     image_gen_model: str = "google/gemini-2.5-flash-image"
 
+    # External MCP server connectivity -- see mcp_servers.json. Enabled by
+    # default since the shipped config only connects to a local, no-network
+    # demo server; real external servers must be added deliberately.
+    mcp_enabled: bool = True
+    mcp_config_path: str = "mcp_servers.json"
+
     @property
     def database_url(self) -> str:
         return (

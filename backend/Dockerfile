@@ -13,5 +13,6 @@ ENV NLTK_DATA=/usr/local/share/nltk_data
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt punkt_tab
 
 COPY app ./app
+COPY mcp_demo_server.py mcp_servers.json ./
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-keep-alive", "300"]
