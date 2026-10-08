@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     await close_store()
 
 
-app = FastAPI(title="LangGraph OpenRouter Agent", lifespan=lifespan)
+app = FastAPI(title="Anupam's Claude", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(health.router, prefix="/api")

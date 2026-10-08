@@ -24,6 +24,34 @@
   }
   let mermaidCounter = 0;
 
+  if (window.marked) {
+    // breaks:true -- chat text doesn't reliably use markdown's blank-line
+    // paragraph convention; treat single newlines as <br> like most chat UIs.
+    window.marked.setOptions({ gfm: true, breaks: true });
+  }
+
+  /**
+   * Renders markdown to sanitized HTML -- headings, code blocks, lists,
+   * bold/italic, links, etc. DOMPurify is the actual security boundary here
+   * (not any "disable raw HTML" setting in marked): model output is
+   * untrusted, and sanitizing the final HTML regardless of how it was
+   * produced is the standard, robust marked+DOMPurify pattern.
+   */
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function renderMarkdown(raw) {
+    if (!window.marked || !window.DOMPurify) return escapeHtml(raw);
+    try {
+      return window.DOMPurify.sanitize(window.marked.parse(raw));
+    } catch {
+      return escapeHtml(raw);
+    }
+  }
+
   function newThreadId() {
     return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
   }
@@ -54,18 +82,50 @@
     scrollToBottom();
   }
 
+  /**
+   * Raw markdown source is accumulated separately from the rendered DOM --
+   * re-parsing the whole accumulated string on every delta (rather than
+   * appending pre-rendered HTML fragments) is what lets incomplete markdown
+   * "self-heal": an unclosed code fence or bold marker renders as plain
+   * text until the closing marker arrives, then re-renders correctly. This
+   * is the standard pattern for progressively rendering streamed markdown.
+   */
   function appendAssistantMessageShell() {
     hideEmptyState();
     const fragment = assistantTemplate.content.cloneNode(true);
     const el = fragment.querySelector(".message");
     transcript.appendChild(el);
     scrollToBottom();
+
+    const answerEl = el.querySelector(".answer");
+    const thinkingBodyEl = el.querySelector(".thinking-body");
+    let answerRaw = "";
+    let thinkingRaw = "";
+
     return {
       root: el,
       thinking: el.querySelector(".thinking"),
-      thinkingBody: el.querySelector(".thinking-body"),
+      thinkingBody: thinkingBodyEl,
       toolCards: el.querySelector(".tool-cards"),
-      answer: el.querySelector(".answer"),
+      answer: answerEl,
+      appendAnswerDelta(delta) {
+        answerRaw += delta;
+        answerEl.innerHTML = renderMarkdown(answerRaw);
+      },
+      appendThinkingDelta(delta) {
+        thinkingRaw += delta;
+        thinkingBodyEl.innerHTML = renderMarkdown(thinkingRaw);
+      },
+      setAnswerText(text) {
+        answerRaw = text;
+        answerEl.innerHTML = renderMarkdown(answerRaw);
+      },
+      appendErrorNote(message) {
+        const note = document.createElement("div");
+        note.className = "answer-error";
+        note.textContent = message;
+        el.querySelector(".message-body").appendChild(note);
+      },
     };
   }
 
@@ -263,11 +323,11 @@
             thinkingOpened = true;
           }
           const delta = typeof d.delta === "string" ? d.delta : JSON.stringify(d.delta);
-          shell.thinkingBody.textContent += delta;
+          shell.appendThinkingDelta(delta);
           scrollToBottom();
         },
         token: (d) => {
-          shell.answer.textContent += d.delta ?? "";
+          shell.appendAnswerDelta(d.delta ?? "");
           scrollToBottom();
         },
         tool_call: (d) => toolCards.start(d.id, d.name, d.args),
@@ -276,7 +336,7 @@
           if (thinkingOpened) shell.thinking.open = false;
         },
         error: (d) => {
-          shell.answer.textContent += `\n[error: ${d.message}]`;
+          shell.appendErrorNote(`Error: ${d.message}`);
         },
       });
       // A title may have just been created (first message in this thread) or
@@ -369,7 +429,7 @@
             appendUserMessage(msg.content);
           } else {
             const shell = appendAssistantMessageShell();
-            shell.answer.textContent = msg.content;
+            shell.setAnswerText(msg.content);
           }
         }
       }
@@ -447,7 +507,7 @@
           appendUserMessage(msg.content);
         } else {
           const shell = appendAssistantMessageShell();
-          shell.answer.textContent = msg.content;
+          shell.setAnswerText(msg.content);
         }
       }
     })
