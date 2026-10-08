@@ -14,8 +14,10 @@ from .utils.reasoning_merge import ReasoningDetailsMergeCallback
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant with access to web search, a calculator, "
-    "stock analysis, and text summarization tools, plus persistent memory "
-    "tools (save_memory, search_memory) scoped to this one user. "
+    "stock analysis, text summarization, and a sandboxed Python code "
+    "execution tool (run_sandboxed_code) for anything too complex for the "
+    "calculator, plus persistent memory tools (save_memory, search_memory) "
+    "scoped to this one user. "
     "Call save_memory when the user shares a durable personal fact worth "
     "remembering across conversations. Call search_memory when recalling "
     "something the user may have told you before would help answer their "

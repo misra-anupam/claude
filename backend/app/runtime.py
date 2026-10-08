@@ -13,7 +13,11 @@ from .checkpointer import get_checkpointer
 from .config import Settings
 from .db import wait_for_postgres
 from .resilience.cache import build_caches
-from .resilience.circuit_breaker import EXTERNAL_TOOL_NAMES, build_breakers
+from .resilience.circuit_breaker import (
+    EXTERNAL_TOOL_NAMES,
+    NO_CACHE_TOOL_NAMES,
+    build_breakers,
+)
 from .store import get_store
 
 
@@ -41,6 +45,9 @@ async def build_runtime(settings: Settings) -> AgentRuntime:
     # Caps concurrent outbound calls to the free/no-key services so a burst of
     # parallel tool calls doesn't trigger upstream rate-limiting/IP bans.
     tool_semaphores = {name: asyncio.Semaphore(4) for name in EXTERNAL_TOOL_NAMES}
+    # Tighter cap for sandbox_exec -- each call spins up a real container on
+    # the host, matching the executor service's own max_concurrent=4 limit.
+    tool_semaphores.update({name: asyncio.Semaphore(2) for name in NO_CACHE_TOOL_NAMES})
     graph = build_agent_graph(
         checkpointer, store, breakers, tool_semaphores, caches, http_client
     )

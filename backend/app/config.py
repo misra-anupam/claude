@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
 
     streaming_api_version: str = "v3"
+    executor_url: str = "http://executor:8000"
 
     @property
     def database_url(self) -> str:

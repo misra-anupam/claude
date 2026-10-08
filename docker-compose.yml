@@ -13,15 +13,33 @@ services:
       timeout: 5s
       retries: 10
 
+  # Holds the Docker socket mount so untrusted code can be sandboxed in
+  # sibling containers (network-disabled, read-only, resource-capped --
+  # verified live during development). Deliberately isolated on the
+  # `sandbox` network only (not `default`) so postgres/frontend have no path
+  # to it even if compromised, and it has no path to postgres either -- the
+  # backend is the sole bridge, reaching it over `sandbox` while staying on
+  # `default` for Postgres + outbound OpenRouter calls.
+  executor:
+    build: ./executor
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - sandbox
+
   backend:
     build: ./backend
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      EXECUTOR_URL: http://executor:8000
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - default
+      - sandbox
     # Not published on the host -- only reachable via the frontend's nginx
     # reverse proxy (same-origin from the browser's point of view, no CORS
     # needed). Reach it directly for debugging with:
@@ -33,6 +51,15 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+networks:
+  default: {}
+  # internal: true -- containers whose *only* network is this one get no
+  # outbound internet access either. executor doesn't need any (it just
+  # drives the local Docker socket and answers backend's HTTP calls); this
+  # is extra containment on top of the per-sandbox-container hardening.
+  sandbox:
+    internal: true
 
 volumes:
   pgdata:
