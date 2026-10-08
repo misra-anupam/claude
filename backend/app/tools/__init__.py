@@ -7,6 +7,7 @@ from langgraph.store.base import BaseStore
 
 from .calculator import calculator
 from .chart_tools import build_chart_tools
+from .document_tools import build_document_tools
 from .image_gen import build_image_gen_tool
 from .memory_tools import build_memory_tools
 from .sandbox_exec import build_sandbox_exec_tool
@@ -43,5 +44,6 @@ def build_tool_list(
         build_image_gen_tool(
             http_client, breakers["image_gen"], tool_semaphores["image_gen"], artifacts
         ),
+        *build_document_tools(artifacts),
         *build_memory_tools(store),
     ]

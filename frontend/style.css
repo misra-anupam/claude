@@ -168,6 +168,15 @@ body {
   border-radius: 0.3rem;
 }
 
+.tool-artifact-download {
+  display: inline-block;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tool-artifact-download:hover { text-decoration: underline; }
+
 .tool-card-render svg {
   max-width: 100%;
   height: auto;

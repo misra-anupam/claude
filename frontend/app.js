@@ -132,6 +132,18 @@
           renderEl.appendChild(img);
           resultEl.hidden = false;
           resultEl.textContent = structured.text || "";
+        } else if (structured && structured.artifact_id) {
+          // Non-image artifact (PDF, HTML, ...) -- offer a download link
+          // rather than trying to render it inline in the chat transcript.
+          renderEl.hidden = false;
+          const link = document.createElement("a");
+          link.href = `/api/artifacts/${structured.artifact_id}`;
+          link.download = structured.filename || "download";
+          link.className = "tool-artifact-download";
+          link.textContent = `⬇ Download ${structured.filename || "file"}`;
+          renderEl.appendChild(link);
+          resultEl.hidden = false;
+          resultEl.textContent = structured.text || "";
         } else if (structured && structured.mermaid) {
           renderEl.hidden = false;
           resultEl.hidden = false;
