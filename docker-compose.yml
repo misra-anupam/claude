@@ -52,12 +52,13 @@ services:
     depends_on:
       - backend
 
-  # Static build of the mkdocs-material documentation site (docs/ +
-  # mkdocs.yml) -- built once at image-build time, served by plain nginx.
-  # No app dependencies: it doesn't talk to backend/postgres/executor at all.
+  # Static build of the mkdocs-material documentation site (self-contained
+  # under docs/: docs/mkdocs.yml + docs/docs/ content + docs/Dockerfile.docs)
+  # -- built once at image-build time, served by plain nginx. No app
+  # dependencies: it doesn't talk to backend/postgres/executor at all.
   docs:
     build:
-      context: .
+      context: ./docs
       dockerfile: Dockerfile.docs
     ports:
       - "8001:80"

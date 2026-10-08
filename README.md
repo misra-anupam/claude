@@ -9,10 +9,11 @@ not built yet.
 
 **Full documentation** (architecture diagrams, per-tool deep dives, the
 streaming design and every real bug found building it, the security model)
-lives in `docs/` as an [mkdocs-material](https://squidfunk.github.io/mkdocs-material/)
-site:
+is a self-contained [mkdocs-material](https://squidfunk.github.io/mkdocs-material/)
+site under `docs/` (`docs/mkdocs.yml`, `docs/docs/`, `docs/Dockerfile.docs`):
 
 ```bash
+cd docs
 pip install -r requirements-docs.txt
 mkdocs serve   # http://localhost:8000
 ```
