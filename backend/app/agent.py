@@ -41,7 +41,7 @@ def build_agent_graph(
     model = ChatOpenRouter(
         model=settings.openrouter_model,
         openrouter_api_key=settings.openrouter_api_key,
-        reasoning={"max_tokens": settings.reasoning_max_tokens},
+        reasoning={"effort": settings.reasoning_effort},
         streaming=True,
         model_kwargs={"parallel_tool_calls": True},
         max_retries=3,

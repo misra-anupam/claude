@@ -6,7 +6,13 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str
     openrouter_model: str = "anthropic/claude-sonnet-4.5"
-    reasoning_max_tokens: int = 2000
+    # "effort" (low|medium|high), not "max_tokens" -- verified live against a
+    # real OpenRouter call: anthropic/claude-sonnet-4.5 via OpenRouter returns
+    # reasoning_details with {"effort": "high"} but NOT with {"max_tokens": N},
+    # contradicting earlier research that claimed Anthropic models need the
+    # budget-token style. Confirmed deepseek/deepseek-r1 DOES work with
+    # max_tokens, so this is model/provider-specific, not a universal rule.
+    reasoning_effort: str = "high"
 
     postgres_user: str = "appuser"
     postgres_password: str = "changeme"
