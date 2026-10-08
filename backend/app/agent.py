@@ -1,3 +1,8 @@
+import asyncio
+
+import httpx
+from aiobreaker import CircuitBreaker
+from cachetools import TTLCache
 from langchain.agents import create_agent
 from langchain_openrouter import ChatOpenRouter
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -19,15 +24,31 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_agent_graph(checkpointer: BaseCheckpointSaver, store: BaseStore):
+def build_agent_graph(
+    checkpointer: BaseCheckpointSaver,
+    store: BaseStore,
+    breakers: dict[str, CircuitBreaker],
+    tool_semaphores: dict[str, asyncio.Semaphore],
+    caches: dict[str, TTLCache],
+    http_client: httpx.AsyncClient,
+):
+    # NOTE: deliberately NOT using `.with_retry()` here -- it wraps the model in
+    # a generic `RunnableRetry`, which doesn't expose `.bind_tools()`, and
+    # `create_agent` calls `model.bind_tools(...)` internally. Confirmed by a
+    # live run: "'RunnableRetry' object has no attribute 'bind_tools'".
+    # ChatOpenRouter's own native `max_retries` field achieves the same retry
+    # goal without that incompatibility.
     model = ChatOpenRouter(
         model=settings.openrouter_model,
         openrouter_api_key=settings.openrouter_api_key,
         reasoning={"max_tokens": settings.reasoning_max_tokens},
         streaming=True,
+        model_kwargs={"parallel_tool_calls": True},
+        max_retries=3,
         callbacks=[ReasoningDetailsMergeCallback()],
     )
-    tools = build_tool_list(store)
+
+    tools = build_tool_list(store, breakers, tool_semaphores, caches, http_client)
     return create_agent(
         model=model,
         tools=tools,

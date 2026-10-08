@@ -1,17 +1,36 @@
+import asyncio
+
+import httpx
+from aiobreaker import CircuitBreaker
+from cachetools import TTLCache
 from langgraph.store.base import BaseStore
 
 from .calculator import calculator
 from .memory_tools import build_memory_tools
-from .stock_analysis import stock_analysis
-from .summarize_text import summarize_text
-from .web_search import web_search
+from .stock_analysis import build_stock_analysis_tool
+from .summarize_text import build_summarize_text_tool
+from .web_search import build_web_search_tool
 
 
-def build_tool_list(store: BaseStore) -> list:
+def build_tool_list(
+    store: BaseStore,
+    breakers: dict[str, CircuitBreaker],
+    tool_semaphores: dict[str, asyncio.Semaphore],
+    caches: dict[str, TTLCache],
+    http_client: httpx.AsyncClient,
+) -> list:
     return [
-        web_search,
+        build_web_search_tool(
+            caches["web_search"], breakers["web_search"], tool_semaphores["web_search"]
+        ),
         calculator,
-        stock_analysis,
-        summarize_text,
+        build_stock_analysis_tool(
+            caches["stock_analysis"],
+            breakers["stock_analysis"],
+            tool_semaphores["stock_analysis"],
+        ),
+        build_summarize_text_tool(
+            http_client, caches["summarize_text"], breakers["summarize_text"]
+        ),
         *build_memory_tools(store),
     ]
