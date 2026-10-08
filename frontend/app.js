@@ -1,0 +1,199 @@
+(() => {
+  "use strict";
+
+  const transcript = document.getElementById("transcript");
+  const composer = document.getElementById("composer");
+  const input = document.getElementById("message-input");
+  const sendButton = document.getElementById("send-button");
+  const assistantTemplate = document.getElementById("assistant-message-template");
+  const toolCardTemplate = document.getElementById("tool-card-template");
+
+  const threadId = (() => {
+    let id = localStorage.getItem("threadId");
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+      localStorage.setItem("threadId", id);
+    }
+    return id;
+  })();
+
+  function appendUserMessage(text) {
+    const el = document.createElement("div");
+    el.className = "message user";
+    el.textContent = text;
+    transcript.appendChild(el);
+    transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  function appendAssistantMessageShell() {
+    const fragment = assistantTemplate.content.cloneNode(true);
+    const el = fragment.querySelector(".message");
+    transcript.appendChild(el);
+    transcript.scrollTop = transcript.scrollHeight;
+    return {
+      root: el,
+      thinking: el.querySelector(".thinking"),
+      thinkingBody: el.querySelector(".thinking-body"),
+      toolCards: el.querySelector(".tool-cards"),
+      answer: el.querySelector(".answer"),
+    };
+  }
+
+  function appendErrorMessage(text) {
+    const el = document.createElement("div");
+    el.className = "message error";
+    el.textContent = text;
+    transcript.appendChild(el);
+    transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  /**
+   * Keyed by tool_call id, NOT a single "current tool" slot -- when the
+   * model fires multiple tool calls in one turn, several cards can sit in
+   * "pending" state simultaneously, each resolving independently as its own
+   * tool_result event arrives.
+   */
+  function createToolCardTracker(container) {
+    const cards = new Map();
+    return {
+      start(id, name, args) {
+        const fragment = toolCardTemplate.content.cloneNode(true);
+        const card = fragment.querySelector(".tool-card");
+        card.querySelector(".tool-card-name").textContent = name;
+        card.querySelector(".tool-card-args").textContent = JSON.stringify(args ?? {});
+        container.appendChild(card);
+        cards.set(id, card);
+        transcript.scrollTop = transcript.scrollHeight;
+      },
+      finish(id, result, error) {
+        const card = cards.get(id);
+        if (!card) return;
+        const resultEl = card.querySelector(".tool-card-result");
+        const statusEl = card.querySelector(".tool-card-status");
+        resultEl.hidden = false;
+        if (error) {
+          card.classList.remove("pending");
+          card.classList.add("error");
+          statusEl.textContent = "error";
+          resultEl.textContent = error;
+        } else {
+          card.classList.remove("pending");
+          card.classList.add("done");
+          statusEl.textContent = "done";
+          resultEl.textContent = typeof result === "string" ? result : JSON.stringify(result);
+        }
+        transcript.scrollTop = transcript.scrollHeight;
+      },
+    };
+  }
+
+  /**
+   * Native EventSource can't POST a JSON body (GET-only, no custom body) --
+   * this manually parses the text/event-stream response from fetch()'s
+   * ReadableStream. SSE events are blank-line-delimited; a chunk boundary
+   * can land mid-event, so only split on complete "\n\n" occurrences and
+   * keep the remainder buffered for the next read.
+   */
+  async function streamChat(userText, handlers) {
+    const resp = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId, message: userText }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`Request failed (${resp.status}): ${text || resp.statusText}`);
+    }
+
+    const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        dispatchSSEEvent(buffer.slice(0, idx), handlers);
+        buffer = buffer.slice(idx + 2);
+      }
+    }
+    if (buffer.trim()) dispatchSSEEvent(buffer, handlers);
+  }
+
+  function dispatchSSEEvent(rawEvent, handlers) {
+    let eventName = "message";
+    const dataLines = [];
+    for (const line of rawEvent.split("\n")) {
+      if (line.startsWith(":")) continue; // keep-alive comment
+      if (line.startsWith("event:")) eventName = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+    }
+    if (dataLines.length === 0) return;
+    let data;
+    try {
+      data = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    const handler = handlers[eventName] ?? handlers.default;
+    if (handler) handler(data);
+  }
+
+  async function sendMessage(text) {
+    appendUserMessage(text);
+    const shell = appendAssistantMessageShell();
+    const toolCards = createToolCardTracker(shell.toolCards);
+    let thinkingOpened = false;
+
+    try {
+      await streamChat(text, {
+        thinking: (d) => {
+          if (!thinkingOpened) {
+            shell.thinking.hidden = false;
+            shell.thinking.open = true;
+            thinkingOpened = true;
+          }
+          const delta = typeof d.delta === "string" ? d.delta : JSON.stringify(d.delta);
+          shell.thinkingBody.textContent += delta;
+          transcript.scrollTop = transcript.scrollHeight;
+        },
+        token: (d) => {
+          shell.answer.textContent += d.delta ?? "";
+          transcript.scrollTop = transcript.scrollHeight;
+        },
+        tool_call: (d) => toolCards.start(d.id, d.name, d.args),
+        tool_result: (d) => toolCards.finish(d.id, d.result, d.error),
+        done: () => {
+          if (thinkingOpened) shell.thinking.open = false;
+        },
+        error: (d) => {
+          shell.answer.textContent += `\n[error: ${d.message}]`;
+        },
+      });
+    } catch (err) {
+      appendErrorMessage(String(err.message || err));
+    }
+  }
+
+  composer.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    sendButton.disabled = true;
+    try {
+      await sendMessage(text);
+    } finally {
+      sendButton.disabled = false;
+      input.focus();
+    }
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      composer.requestSubmit();
+    }
+  });
+})();

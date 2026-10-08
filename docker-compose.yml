@@ -22,10 +22,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # PHASE 1: temporarily published on the host for direct testing.
-    # Phase 4 removes this port mapping once the frontend's nginx proxies /api/*.
+    # Not published on the host -- only reachable via the frontend's nginx
+    # reverse proxy (same-origin from the browser's point of view, no CORS
+    # needed). Reach it directly for debugging with:
+    #   docker compose exec frontend wget -qO- http://backend:8000/api/health
+
+  frontend:
+    build: ./frontend
     ports:
-      - "8000:8000"
+      - "8080:80"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LangGraph Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>LangGraph Agent</h1>
+    <p class="subtitle">SSE streaming &middot; thinking &middot; tool calls &middot; long-term memory</p>
+  </header>
+
+  <main id="transcript" aria-live="polite"></main>
+
+  <form id="composer" autocomplete="off">
+    <textarea id="message-input" placeholder="Ask something... (try: search the web, do some math, check a stock, or tell me a fact to remember)" rows="2" required></textarea>
+    <button type="submit" id="send-button">Send</button>
+  </form>
+
+  <template id="assistant-message-template">
+    <div class="message assistant">
+      <details class="thinking" hidden>
+        <summary>Thinking&hellip;</summary>
+        <div class="thinking-body"></div>
+      </details>
+      <div class="tool-cards"></div>
+      <div class="answer"></div>
+    </div>
+  </template>
+
+  <template id="tool-card-template">
+    <div class="tool-card pending">
+      <div class="tool-card-header">
+        <span class="tool-card-name"></span>
+        <span class="tool-card-status">running&hellip;</span>
+      </div>
+      <pre class="tool-card-args"></pre>
+      <pre class="tool-card-result" hidden></pre>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
