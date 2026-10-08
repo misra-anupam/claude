@@ -5,8 +5,9 @@ from aiobreaker import CircuitBreaker
 EXTERNAL_TOOL_NAMES = ("web_search", "stock_analysis", "summarize_text")
 # Tools that need a breaker + concurrency cap but deliberately NOT a result
 # cache -- sandbox_exec's output can depend on randomness/time/etc inside the
-# executed code, so caching by code text would be surprising/wrong.
-NO_CACHE_TOOL_NAMES = ("sandbox_exec",)
+# executed code (so caching by code text would be surprising/wrong), and
+# image_gen is inherently non-deterministic/creative per call.
+NO_CACHE_TOOL_NAMES = ("sandbox_exec", "image_gen")
 
 
 def build_breakers() -> dict[str, CircuitBreaker]:

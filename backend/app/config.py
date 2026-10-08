@@ -22,6 +22,11 @@ class Settings(BaseSettings):
 
     streaming_api_version: str = "v3"
     executor_url: str = "http://executor:8000"
+    # Image generation also goes through OpenRouter -- same OPENROUTER_API_KEY,
+    # no separate Gemini key needed. Verified live: OpenRouter proxies Google's
+    # Gemini 2.5 Flash Image ("Nano Banana") directly over the standard chat
+    # completions endpoint, billed through the one OpenRouter account.
+    image_gen_model: str = "google/gemini-2.5-flash-image"
 
     @property
     def database_url(self) -> str:
