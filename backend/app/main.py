@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from .checkpointer import close_checkpointer
 from .config import settings
 from .resilience.rate_limit import limiter
-from .routers import chat, health
+from .routers import artifacts, chat, health
 from .runtime import build_runtime
 from .store import close_store
 
@@ -29,3 +29,4 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(health.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(artifacts.router, prefix="/api")

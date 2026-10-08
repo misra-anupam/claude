@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
 from .agent import build_agent_graph
+from .artifacts import build_artifact_store
 from .checkpointer import get_checkpointer
 from .config import Settings
 from .db import wait_for_postgres
@@ -33,6 +34,7 @@ class AgentRuntime:
     caches: dict[str, TTLCache]
     breakers: dict[str, CircuitBreaker]
     tool_semaphores: dict[str, asyncio.Semaphore]
+    artifacts: TTLCache
 
 
 async def build_runtime(settings: Settings) -> AgentRuntime:
@@ -42,6 +44,7 @@ async def build_runtime(settings: Settings) -> AgentRuntime:
     http_client = httpx.AsyncClient(timeout=10)
     caches = build_caches()
     breakers = build_breakers()
+    artifacts = build_artifact_store()
     # Caps concurrent outbound calls to the free/no-key services so a burst of
     # parallel tool calls doesn't trigger upstream rate-limiting/IP bans.
     tool_semaphores = {name: asyncio.Semaphore(4) for name in EXTERNAL_TOOL_NAMES}
@@ -49,7 +52,7 @@ async def build_runtime(settings: Settings) -> AgentRuntime:
     # the host, matching the executor service's own max_concurrent=4 limit.
     tool_semaphores.update({name: asyncio.Semaphore(2) for name in NO_CACHE_TOOL_NAMES})
     graph = build_agent_graph(
-        checkpointer, store, breakers, tool_semaphores, caches, http_client
+        checkpointer, store, breakers, tool_semaphores, caches, http_client, artifacts
     )
     return AgentRuntime(
         graph=graph,
@@ -59,4 +62,5 @@ async def build_runtime(settings: Settings) -> AgentRuntime:
         caches=caches,
         breakers=breakers,
         tool_semaphores=tool_semaphores,
+        artifacts=artifacts,
     )

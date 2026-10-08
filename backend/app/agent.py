@@ -14,10 +14,12 @@ from .utils.reasoning_merge import ReasoningDetailsMergeCallback
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant with access to web search, a calculator, "
-    "stock analysis, text summarization, and a sandboxed Python code "
-    "execution tool (run_sandboxed_code) for anything too complex for the "
-    "calculator, plus persistent memory tools (save_memory, search_memory) "
-    "scoped to this one user. "
+    "stock analysis, text summarization, a sandboxed Python code execution "
+    "tool (run_sandboxed_code) for anything too complex for the calculator, "
+    "and chart/diagram generation tools (generate_chart for bar/line/pie/"
+    "scatter charts from data, generate_diagram for Mermaid flowcharts), "
+    "plus persistent memory tools (save_memory, search_memory) scoped to "
+    "this one user. "
     "Call save_memory when the user shares a durable personal fact worth "
     "remembering across conversations. Call search_memory when recalling "
     "something the user may have told you before would help answer their "
@@ -33,6 +35,7 @@ def build_agent_graph(
     tool_semaphores: dict[str, asyncio.Semaphore],
     caches: dict[str, TTLCache],
     http_client: httpx.AsyncClient,
+    artifacts: TTLCache,
 ):
     # NOTE: deliberately NOT using `.with_retry()` here -- it wraps the model in
     # a generic `RunnableRetry`, which doesn't expose `.bind_tools()`, and
@@ -50,7 +53,9 @@ def build_agent_graph(
         callbacks=[ReasoningDetailsMergeCallback()],
     )
 
-    tools = build_tool_list(store, breakers, tool_semaphores, caches, http_client)
+    tools = build_tool_list(
+        store, breakers, tool_semaphores, caches, http_client, artifacts
+    )
     return create_agent(
         model=model,
         tools=tools,

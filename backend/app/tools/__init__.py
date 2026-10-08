@@ -6,6 +6,7 @@ from cachetools import TTLCache
 from langgraph.store.base import BaseStore
 
 from .calculator import calculator
+from .chart_tools import build_chart_tools
 from .memory_tools import build_memory_tools
 from .sandbox_exec import build_sandbox_exec_tool
 from .stock_analysis import build_stock_analysis_tool
@@ -19,6 +20,7 @@ def build_tool_list(
     tool_semaphores: dict[str, asyncio.Semaphore],
     caches: dict[str, TTLCache],
     http_client: httpx.AsyncClient,
+    artifacts: TTLCache,
 ) -> list:
     return [
         build_web_search_tool(
@@ -36,5 +38,6 @@ def build_tool_list(
         build_sandbox_exec_tool(
             http_client, breakers["sandbox_exec"], tool_semaphores["sandbox_exec"]
         ),
+        *build_chart_tools(artifacts),
         *build_memory_tools(store),
     ]

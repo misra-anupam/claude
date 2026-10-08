@@ -8,6 +8,11 @@
   const assistantTemplate = document.getElementById("assistant-message-template");
   const toolCardTemplate = document.getElementById("tool-card-template");
 
+  if (window.mermaid) {
+    window.mermaid.initialize({ startOnLoad: false });
+  }
+  let mermaidCounter = 0;
+
   const threadId = (() => {
     let id = localStorage.getItem("threadId");
     if (!id) {
@@ -48,6 +53,37 @@
   }
 
   /**
+   * Tool results are normally plain strings, but the chart/diagram tools
+   * return a JSON-encoded object instead ({"text":..., "artifact_id":...,
+   * "content_type":...} for images, {"text":..., "mermaid":...} for
+   * diagrams) -- detect that shape and render specially, falling back to
+   * plain text for every other tool.
+   */
+  function parseStructuredResult(result) {
+    if (typeof result !== "string") return null;
+    try {
+      const parsed = JSON.parse(result);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function renderMermaid(code, container) {
+    if (!window.mermaid) {
+      container.textContent = code;
+      return;
+    }
+    const id = `mermaid-${++mermaidCounter}`;
+    try {
+      const { svg } = await window.mermaid.render(id, code);
+      container.innerHTML = svg;
+    } catch (err) {
+      container.textContent = `[diagram render failed: ${err.message}]\n${code}`;
+    }
+  }
+
+  /**
    * Keyed by tool_call id, NOT a single "current tool" slot -- when the
    * model fires multiple tool calls in one turn, several cards can sit in
    * "pending" state simultaneously, each resolving independently as its own
@@ -69,17 +105,42 @@
         const card = cards.get(id);
         if (!card) return;
         const resultEl = card.querySelector(".tool-card-result");
+        const renderEl = card.querySelector(".tool-card-render");
         const statusEl = card.querySelector(".tool-card-status");
-        resultEl.hidden = false;
+
         if (error) {
           card.classList.remove("pending");
           card.classList.add("error");
           statusEl.textContent = "error";
+          resultEl.hidden = false;
           resultEl.textContent = error;
+          transcript.scrollTop = transcript.scrollHeight;
+          return;
+        }
+
+        card.classList.remove("pending");
+        card.classList.add("done");
+        statusEl.textContent = "done";
+
+        const structured = parseStructuredResult(result);
+        if (structured && structured.artifact_id && String(structured.content_type || "").startsWith("image/")) {
+          renderEl.hidden = false;
+          const img = document.createElement("img");
+          img.src = `/api/artifacts/${structured.artifact_id}`;
+          img.alt = structured.text || "generated chart";
+          img.className = "tool-artifact-image";
+          renderEl.appendChild(img);
+          resultEl.hidden = false;
+          resultEl.textContent = structured.text || "";
+        } else if (structured && structured.mermaid) {
+          renderEl.hidden = false;
+          resultEl.hidden = false;
+          resultEl.textContent = structured.text || "";
+          renderMermaid(structured.mermaid, renderEl).then(() => {
+            transcript.scrollTop = transcript.scrollHeight;
+          });
         } else {
-          card.classList.remove("pending");
-          card.classList.add("done");
-          statusEl.textContent = "done";
+          resultEl.hidden = false;
           resultEl.textContent = typeof result === "string" ? result : JSON.stringify(result);
         }
         transcript.scrollTop = transcript.scrollHeight;
