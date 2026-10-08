@@ -4,7 +4,8 @@ A study project: a LangGraph agent (Claude via OpenRouter) wrapped in FastAPI,
 streamed live to a vanilla-JS frontend over SSE -- tokens, "thinking"
 (reasoning), and tool-call events all arrive as they happen, not just at the
 end. Backed by Postgres for per-thread conversation history and long-term
-memory for a single user.
+memory for a single user. See [TODO.md](TODO.md) for what's deliberately
+not built yet.
 
 ## Run it
 
