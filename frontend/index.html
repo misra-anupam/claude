@@ -7,39 +7,104 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="app-header">
-    <h1>LangGraph Agent</h1>
-    <p class="subtitle">SSE streaming &middot; thinking &middot; tool calls &middot; long-term memory</p>
-  </header>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="brand-mark" aria-hidden="true">✶</span>
+        <span class="brand-title">LangGraph Agent</span>
+      </div>
+      <button type="button" id="new-chat-button" class="new-chat-button">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+          <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        New chat
+      </button>
+      <nav class="conversation-list" id="conversation-list" aria-label="Past conversations">
+        <p class="conversation-list-empty" id="conversation-list-empty" hidden>No conversations yet</p>
+      </nav>
+    </aside>
 
-  <main id="transcript" aria-live="polite"></main>
+    <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle conversation list" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+        <path d="M4 7H20M4 12H20M4 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
 
-  <form id="composer" autocomplete="off">
-    <textarea id="message-input" placeholder="Ask something... (try: search the web, do some math, check a stock, or tell me a fact to remember)" rows="2" required></textarea>
-    <button type="submit" id="send-button">Send</button>
-  </form>
+    <div class="main-pane">
+      <main id="scroll-area">
+        <div id="transcript" aria-live="polite">
+          <div class="empty-state" id="empty-state">
+            <span class="empty-mark" aria-hidden="true">✶</span>
+            <h1>What can I help you build?</h1>
+            <p class="empty-subtitle">
+              Live token streaming, visible reasoning, parallel tool calls, sandboxed
+              code execution, charts, images, documents, and long-term memory.
+            </p>
+          </div>
+        </div>
+      </main>
+
+      <div class="composer-area">
+        <form id="composer" autocomplete="off">
+          <textarea
+            id="message-input"
+            placeholder="Message the agent..."
+            rows="1"
+            required
+          ></textarea>
+          <button type="submit" id="send-button" aria-label="Send message">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+              <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+        <p class="composer-hint">Enter to send &middot; Shift+Enter for a new line</p>
+      </div>
+    </div>
+  </div>
 
   <template id="assistant-message-template">
     <div class="message assistant">
-      <details class="thinking" hidden>
-        <summary>Thinking&hellip;</summary>
-        <div class="thinking-body"></div>
-      </details>
-      <div class="tool-cards"></div>
-      <div class="answer"></div>
+      <div class="avatar" aria-hidden="true">✶</div>
+      <div class="message-body">
+        <details class="thinking" hidden>
+          <summary>
+            <span class="thinking-icon" aria-hidden="true">✦</span>
+            <span class="thinking-label">Thinking</span>
+          </summary>
+          <div class="thinking-body"></div>
+        </details>
+        <div class="tool-cards"></div>
+        <div class="answer"></div>
+      </div>
     </div>
   </template>
 
   <template id="tool-card-template">
     <div class="tool-card pending">
       <div class="tool-card-header">
+        <span class="tool-card-icon" aria-hidden="true">⚙</span>
         <span class="tool-card-name"></span>
-        <span class="tool-card-status">running&hellip;</span>
+        <span class="tool-card-status">Running&hellip;</span>
       </div>
       <pre class="tool-card-args"></pre>
       <pre class="tool-card-result" hidden></pre>
       <div class="tool-card-render" hidden></div>
     </div>
+  </template>
+
+  <template id="conversation-section-template">
+    <div class="conversation-section">
+      <h2 class="conversation-section-title"></h2>
+      <div class="conversation-section-items"></div>
+    </div>
+  </template>
+
+  <template id="conversation-item-template">
+    <button type="button" class="conversation-item">
+      <span class="conversation-item-title"></span>
+    </button>
   </template>
 
   <script src="mermaid.min.js"></script>

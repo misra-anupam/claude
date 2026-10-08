@@ -6,6 +6,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langchain_core.messages import HumanMessage
 
 from ..config import settings
+from ..conversations import touch_conversation
 from ..resilience.rate_limit import limiter
 from ..schemas import ChatRequest
 from ..streaming import get_adapter
@@ -42,6 +43,10 @@ async def chat_stream(req: ChatRequest, request: Request) -> AsyncIterator[Serve
     payload = {"messages": [HumanMessage(content=req.message)]}
     config = {"configurable": {"thread_id": req.thread_id}}
     adapter = get_adapter(settings.streaming_api_version)
+
+    # Title is set once (from whichever message happens to be first in the
+    # thread) and left alone after that; updated_at bumps on every message.
+    await touch_conversation(settings.database_url, req.thread_id, req.message)
 
     queue: asyncio.Queue = asyncio.Queue()
     task = asyncio.create_task(
