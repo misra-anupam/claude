@@ -7,6 +7,16 @@ end. Backed by Postgres for per-thread conversation history and long-term
 memory for a single user. See [TODO.md](TODO.md) for what's deliberately
 not built yet.
 
+**Full documentation** (architecture diagrams, per-tool deep dives, the
+streaming design and every real bug found building it, the security model)
+lives in `docs/` as an [mkdocs-material](https://squidfunk.github.io/mkdocs-material/)
+site:
+
+```bash
+pip install -r requirements-docs.txt
+mkdocs serve   # http://localhost:8000
+```
+
 ## Run it
 
 ```

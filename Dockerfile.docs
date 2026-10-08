@@ -1,0 +1,13 @@
+FROM python:3.12-slim AS build
+
+WORKDIR /site
+
+COPY requirements-docs.txt .
+RUN pip install --no-cache-dir -r requirements-docs.txt
+
+COPY mkdocs.yml .
+COPY docs ./docs
+RUN mkdocs build --strict
+
+FROM nginx:alpine
+COPY --from=build /site/site /usr/share/nginx/html

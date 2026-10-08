@@ -4,3 +4,4 @@ backend/__pycache__/
 backend/app/**/__pycache__/
 *.pyc
 .DS_Store
+site/
