@@ -28,3 +28,18 @@ Not implemented yet -- tracked here deliberately, not built.
   schedule rather than only in response to a live chat message.
 - **Remote access/execution** -- expose the agent (or the sandbox
   executor) for programmatic/remote invocation beyond the chat UI.
+- **Multi-worker readiness** -- `backend/Dockerfile`'s `CMD` runs a single
+  uvicorn process today; `--workers N` would spawn N separate OS processes,
+  each with its own `AgentRuntime`, Postgres connection pool, and in-memory
+  state (nothing is shared automatically). Before that's safe:
+  - size each worker's Postgres pool as `desired_total / N`, not the same
+    per-worker size across all workers (total connections = pool size x N).
+  - move `artifacts.py`'s in-memory `TTLCache` to a shared backend (Redis or
+    Postgres) -- otherwise `GET /api/artifacts/{id}` 404s whenever the
+    lookup lands on a different worker than the one that created it.
+  - give `resilience/rate_limit.py`'s `Limiter` a `storage_uri` (Redis) --
+    it currently has none, so its in-memory counters are per-worker, and
+    "20/minute" silently becomes `20 x N`/minute in practice.
+  - circuit breakers and the external-call TTL caches would also go
+    per-worker (weaker breaker protection, lower cache hit rate) -- a
+    tolerable degradation, not a correctness bug, but worth noting.

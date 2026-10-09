@@ -4,7 +4,7 @@ site_description: >-
   to a vanilla-JS frontend over SSE -- complete project documentation.
 repo_url: https://github.com/misra-anupam/claude
 repo_name: misra-anupam/claude
-edit_uri: edit/master/docs/
+edit_uri: edit/master/docs/docs/
 
 theme:
   name: material

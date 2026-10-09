@@ -72,6 +72,65 @@ any HTTP method.
     Confirmed via a live `curl -N` against a running container, not just by
     re-reading the source.
 
+## The producer/consumer queue
+
+`chat_stream` doesn't drive the graph itself. It creates an `asyncio.Queue`,
+hands it to a background task running the adapter, and just pumps whatever
+arrives back out as SSE:
+
+```python
+queue: asyncio.Queue = asyncio.Queue()
+task = asyncio.create_task(
+    adapter.run_and_translate(runtime.graph, payload, config, queue, runtime.breakers["openrouter"])
+)
+try:
+    while (item := await queue.get()) is not None:
+        yield ServerSentEvent(event=item["event"], data=item["data"])
+finally:
+    task.cancel()
+```
+
+This loop is intentionally generic -- it has no branching on `item["event"]`
+at all. It doesn't know or care whether the item it just pulled is a
+`thinking` delta or a `tool_result`; it forwards every item through the same
+two lines. All the variety in event types comes entirely from the producer
+side deciding what to `put()` and when (`langgraph_v3_adapter.py`'s
+`consume_messages()`/`consume_updates()`, run concurrently via
+`asyncio.gather`). The queue is the reason that works: it's an async-safe
+FIFO mailbox that lets a coroutine awaiting `get()` suspend (no busy-polling)
+until any producer calls `put()`, and it preserves real arrival order across
+multiple concurrent producers -- exactly what's needed when a `tool_result`
+for a fast tool can legitimately arrive before the `tool_call` event for a
+slower one has even finished being described.
+
+The shutdown signal is just one more item flowing through the same channel:
+the adapter's own `finally: await queue.put(None)` is what ends the `while`
+loop here -- not an exception, not task completion, a plain sentinel value.
+
+!!! note "No backpressure today -- and what would change if there were"
+    `asyncio.Queue()` is created with no `maxsize`, so `put()` never blocks
+    the producer, no matter how far ahead of the consumer it gets. In
+    practice this is safe here because the queue is scoped to a single
+    request: growth is capped by one conversational turn's worth of events
+    (at most a few hundred token/thinking chunks), not an open-ended stream,
+    and the queue is discarded when the request ends.
+
+    If a `maxsize` were set, `await queue.put(...)` would suspend the
+    producer once the queue is full, until `get()` frees a slot -- real
+    backpressure. Tracing where that would actually bite: `put()` is called
+    mid-iteration of `async for chunk in message.text`/`.reasoning`, so a
+    blocked `put()` stalls further consumption of the live
+    `astream_events` stream. That stall can propagate further upstream than
+    it looks: if the backend stops reading bytes off the HTTP connection to
+    OpenRouter because the consuming coroutine is parked on a full queue,
+    the TCP receive buffer fills and real TCP flow control kicks in --
+    OpenRouter's sending side would genuinely slow down too. The one risk a
+    bounded queue would introduce is a producer permanently stuck on `put()`
+    if the consumer disappears entirely (not just slow, but gone) --
+    `task.cancel()` in the `finally` guards against that by raising
+    `CancelledError` at whichever `await` the task is parked on, including
+    an in-progress `put()`.
+
 ## The LangGraph v3 event-streaming API
 
 The adapter (`backend/app/streaming/langgraph_v3_adapter.py`) drives
@@ -95,6 +154,29 @@ async def consume_updates():
 
 await asyncio.gather(consume_messages(), consume_updates())
 ```
+
+These two functions read different native projections and cover opposite
+halves of a tool call -- the *request* vs. the *result*:
+
+| | `consume_messages()` | `consume_updates()` |
+|---|---|---|
+| Reads from | `stream.messages` -- native | `stream.updates` -- opt-in, only exists because `transformers=[UpdatesTransformer]` was passed to `astream_events` |
+| One item per | LLM call | graph node state change |
+| Produces | `thinking`, `token`, `tool_call` | `tool_result` |
+| Represents | what the model said and *decided to call* (`message.tool_calls` is explicitly documented as the request, not the execution result) | proof a tool *actually ran*, via `ToolMessage` instances scanned out of the node's state update, matched by `.tool_call_id` |
+
+Neither one alone is enough: `consume_messages` alone would never show that
+a tool finished (it only sees the model's side), and `consume_updates` alone
+would never show what was asked for, or produce any token/thinking text at
+all. They're run concurrently via `asyncio.gather`, not sequentially,
+because a `tool_call` event and its matching `tool_result` arrive on
+genuinely independent timelines -- when the model fires two tool calls in
+one turn, both `tool_call` events land together as soon as the model
+finalizes, while the two `tool_result` events trickle in separately and out
+of order as each tool actually completes (e.g. `calculator` instantly,
+`web_search` after real network latency). They're stitched back together
+downstream purely by `id`/`tool_call_id`, never by which function emitted
+them or in what order.
 
 !!! danger "Bug #2 (real): the researched `.tools` channel doesn't exist"
     Initial research (an LLM-generated summary of the LangGraph v1.2

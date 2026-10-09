@@ -95,6 +95,7 @@ curl -N -X POST http://localhost:8080/api/chat/stream \
 ## Building this documentation site
 
 ```bash
+cd docs
 pip install -r requirements-docs.txt
 mkdocs serve
 ```
