@@ -245,6 +245,31 @@ open-ended event stream rather than a finished document:
   response is sent with chunked transfer encoding (HTTP/1.1) and ends when
   the server closes it.
 
+### What the content type would be without SSE
+
+| Approach | Content-Type | Notes |
+|---|---|---|
+| Normal JSON reply (no streaming) | `application/json` | Server builds the full reply and sends it once; the client gets nothing until the model finishes. |
+| Streaming newline-delimited JSON | `application/x-ndjson` (or `application/jsonl`) | One JSON object per line. Also a streamed response read with `fetch` + `ReadableStream`. Simpler than SSE (no `event:`/`data:` framing) but no standard event-name field. |
+| Raw streamed text | `text/plain` | Tokens written straight to the body. Easy, but can't distinguish thinking from answer or carry tool calls. |
+| WebSocket | none for messages | Starts as an HTTP upgrade (`Upgrade: websocket`), then uses its own framing rather than an HTTP body. |
+| Polling / long polling | `application/json` | Several separate requests, each returning JSON. |
+
+All the streaming options work the same way as the current setup: the
+browser reads a long-lived response body through a `ReadableStream`. Only the
+server's framing and the client's parser differ.
+
+- `text/event-stream` is the only type here that the SSE spec and
+  `EventSource` recognize. `fetch` doesn't check the type, so this app
+  would still work if the server sent `application/x-ndjson` with a matching
+  client parser; the type mainly signals intent to clients, proxies and
+  browsers.
+- NDJSON would remove the `\n\n` splitting: the client would split on single
+  `\n` and `JSON.parse` each line.
+- Some servers handle compression and proxy buffering per content type.
+  `nginx.conf` here turns both off explicitly, so a different type wouldn't
+  change that.
+
 ### `ReadableStream`
 
 `resp.body` on a `fetch` response is a `ReadableStream` of `Uint8Array`
