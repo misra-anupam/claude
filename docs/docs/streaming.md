@@ -180,6 +180,107 @@ collapses the thinking block, and `error` adds an error note to the message.
 - Closing the connection cancels the work: the `chat_stream` generator is
   closed, its `finally: task.cancel()` runs, and the LangGraph run stops.
 
+## Is this "pure" SSE?
+
+The wire format is real SSE; the client is not the standard SSE client.
+
+**Standard SSE:**
+
+- The response has `Content-Type: text/event-stream`.
+- Events use the SSE text format: `event:` / `data:` lines, blank line
+  between events.
+- It is one long-lived HTTP response with the server pushing to the client.
+- FastAPI's `EventSourceResponse` / `ServerSentEvent` produce this format.
+
+**Deviations from the usual SSE setup:**
+
+| Deviation | Detail |
+|---|---|
+| POST, not GET | The protocol doesn't forbid POST; the browser's `EventSource` API does (GET only). So the app uses `fetch()` + a stream reader. |
+| Partial hand-written parser | `dispatchSSEEvent` handles `event:`, `data:` and `:` comments. It ignores `id:` and `retry:`. |
+| No auto-reconnect | `EventSource` reconnects by itself and can resume via `Last-Event-ID` when the server sends `id:`. This client does neither; a dropped connection is just an error. |
+| Line endings | The spec allows `\r\n` and `\r`; the parser only splits on `\n\n`. Fine as long as the server emits `\n` line endings (not verified against FastAPI's encoder). |
+
+The accurate description is "SSE over a POST using `fetch`", a common
+pattern for LLM chat UIs. Libraries such as `@microsoft/fetch-event-source`
+exist for this and add reconnect and the full parsing rules. A plain
+`EventSource` client cannot talk to this endpoint because it can't send the
+request body.
+
+## The whole reply arrives in one POST response
+
+The reply is the body of the single `POST /api/chat/stream` response, but
+not delivered all at once:
+
+- **Normal HTTP:** the server builds the full body, sends it, and the
+  response ends.
+- **This app:** the server sends the status line and headers immediately,
+  then keeps the response open and writes body chunks as the model produces
+  output (`thinking`, many `token`s, `tool_call`/`tool_result`, then
+  `done`). Closing the generator closes the response.
+
+`fetch()` resolves as soon as the headers arrive -- before the model has
+produced anything -- and `resp.body` is read incrementally. In the browser's
+network tab the POST stays "pending" for as long as the answer is typing
+out. It is the same connection, still delivering its body, not a polling
+loop. The frontend does not save the stream; stored history is read
+separately via `GET .../messages` (final text only).
+
+### `Content-Type: text/event-stream`
+
+This header is what tells every party in the chain that the body is an
+open-ended event stream rather than a finished document:
+
+- **Browser / client:** it is the media type the SSE spec defines.
+  `EventSource` refuses to connect to any response with a different type;
+  `fetch` doesn't check it, but it documents intent.
+- **Body format:** UTF-8 text, lines of `field: value`, events ended by a
+  blank line. The fields are `event`, `data`, `id`, `retry`; lines starting
+  with `:` are comments.
+- **Proxies and CDNs:** some treat the type specially -- for example,
+  compression and buffering are commonly disabled for it. In this project
+  nginx is configured explicitly instead of relying on that:
+  `proxy_buffering off`, and `text/event-stream` left out of `gzip_types`.
+- **No `Content-Length`:** the total size isn't known up front, so the
+  response is sent with chunked transfer encoding (HTTP/1.1) and ends when
+  the server closes it.
+
+### `ReadableStream`
+
+`resp.body` on a `fetch` response is a `ReadableStream` of `Uint8Array`
+chunks -- the browser's standard API for consuming data piece by piece as it
+arrives instead of waiting for the whole thing (which is what
+`await resp.text()` / `resp.json()` do).
+
+In `streamChat`:
+
+```js
+const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  buffer += value;
+  ...
+}
+```
+
+- `pipeThrough(new TextDecoderStream())` converts the byte chunks into
+  strings. Using a decoder *stream* matters because a multi-byte UTF-8
+  character can be split across two network chunks; the decoder holds the
+  partial bytes until the rest arrives, so no garbled characters.
+- `getReader()` locks the stream to one reader and gives a pull interface.
+- `reader.read()` returns a promise that resolves with the next chunk as
+  `{ value, done }`. It **suspends without blocking the page** until data
+  arrives, then the loop body runs.
+- `done: true` means the server closed the response; the loop exits.
+- Chunk boundaries are arbitrary (decided by the network and by nginx), not
+  aligned to SSE events -- that is the reason for the `buffer` and the
+  `\n\n` splitting described above.
+- The stream has built-in flow control: if the consumer stops calling
+  `read()`, the browser stops pulling from the connection and TCP
+  backpressure applies. This client reads continuously, so it doesn't come
+  into play here.
+
 ## The producer/consumer queue
 
 `chat_stream` doesn't drive the graph itself. It creates an `asyncio.Queue`,
