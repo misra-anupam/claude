@@ -6,7 +6,7 @@ not by reading documentation.
 
 ## The SSE event model
 
-The backend emits five named event types over one `POST /api/chat/stream`
+The backend emits six named event types over one `POST /api/chat/stream`
 connection:
 
 | Event | Payload | Meaning |
@@ -71,6 +71,114 @@ any HTTP method.
 
     Confirmed via a live `curl -N` against a running container, not just by
     re-reading the source.
+
+## End-to-end: how one event travels
+
+Chat is **one request, one response**: the same `POST /api/chat/stream`
+carries the user's message in its body and returns the whole reply as a
+response body that stays open. There is no separate "poll for the answer"
+endpoint and no WebSocket. The only other chat-related calls are the history
+reads (`GET /api/conversations`, `GET /api/conversations/{id}/messages`),
+which return finished text after the fact.
+
+```
+LangGraph (astream_events v3)
+   |  messages: reasoning / text chunks, tool_calls
+   |  updates:  ToolMessage results
+   v
+langgraph_v3_adapter._drive_graph --put--> asyncio.Queue --get--> chat_stream (async generator)
+   (background task)                          {event, data}         yield ServerSentEvent
+                                                                          |
+                                         "event: token\ndata: {...}\n\n"  v
+                                                  nginx (proxy_buffering off) --> fetch() ReadableStream
+                                                                                     |
+                                                  app.js: split on \n\n -> dispatchSSEEvent -> handlers
+```
+
+### Wire format
+
+Each event is a block of text lines terminated by a blank line (`\n\n`):
+
+```
+event: token
+data: {"delta": "Hel"}
+
+event: tool_call
+data: {"id": "call_1", "name": "...", "args": {...}}
+
+```
+
+`event:` names the type and `data:` carries a JSON payload. A line starting
+with `:` is a comment (a keep-alive ping in the SSE spec); the frontend
+skips these. The `\n\n` is purely a **delimiter the receiver uses to find
+event boundaries** -- nothing is "sent" by it.
+
+### nginx: why `proxy_buffering off`
+
+`proxy_buffering` controls how nginx relays the upstream (backend) response
+to the client:
+
+- **On (the default):** nginx reads the backend response into memory (or
+  disk) buffers and forwards it only once enough has accumulated or the
+  response ends. For a stream, the client sees nothing until the end, then
+  gets every token in one burst.
+- **Off (this project):** nginx forwards each piece the instant it arrives
+  from the backend, which is what makes token-by-token output visible.
+
+The `/api/` location in `frontend/nginx.conf` also sets `proxy_cache off`,
+a 300s `proxy_read_timeout`, and `proxy_http_version 1.1` with an empty
+`Connection` header (persistent connection). `text/event-stream` is
+deliberately left out of `gzip_types` for the same reason as buffering: gzip
+holds output until it has a block to compress. The cost of buffering off is
+that a slow client keeps a backend connection occupied, which is irrelevant
+at this project's scale.
+
+### Browser side: `streamChat` is the receiver
+
+`streamChat` (`frontend/app.js`) runs **in the browser** and receives the
+stream; it doesn't send anything onward. It:
+
+1. POSTs `{thread_id, message}` with `fetch`, throwing on a non-2xx status.
+2. Reads `resp.body.pipeThrough(new TextDecoderStream()).getReader()`.
+   `TextDecoderStream` also handles multi-byte characters split across
+   network chunks.
+3. Loops on `reader.read()`: append the chunk to a `buffer` string, then
+   while the buffer contains `"\n\n"`, slice off one complete event, pass it
+   to `dispatchSSEEvent`, and keep the remainder.
+4. Exits when the server closes the response (`done: true` from
+   `reader.read()`), dispatching any leftover buffer once.
+
+The buffer is required because network chunks don't align with event
+boundaries: one read may contain half an event, exactly one, or three and a
+half. The remainder waits for the next chunk.
+
+```
+read chunk -> buffer += chunk -> extract every complete "\n\n"-terminated event
+     ^                                 | each -> dispatchSSEEvent -> handler
+     |                                 |          (token -> append text to the page)
+     +------------ wait for next chunk <+
+```
+
+`dispatchSSEEvent` defaults the event name to `message`, skips `:` comment
+lines, joins multiple `data:` lines with `\n` (per the SSE spec), and
+`JSON.parse`s the result -- malformed data is silently dropped. It then
+calls `handlers[eventName] ?? handlers.default`. The handlers in
+`sendMessage` update the DOM: `thinking` fills the collapsible reasoning
+block, `token` appends to the answer and re-renders the markdown,
+`tool_call`/`tool_result` create and resolve cards by `id`, `done`
+collapses the thinking block, and `error` adds an error note to the message.
+
+### Failure paths
+
+- A server-side failure *during* the run arrives as an `error` **event**
+  (see the circuit breaker section below).
+- A dropped connection or non-2xx response is a different path: `fetch` /
+  `reader.read()` throws, and `sendMessage` shows a standalone error bubble.
+- There is **no reconnect or resume**. Native `EventSource` auto-reconnects;
+  this manual `fetch` client does not, so a connection lost mid-answer leaves
+  a partial answer.
+- Closing the connection cancels the work: the `chat_stream` generator is
+  closed, its `finally: task.cancel()` runs, and the LangGraph run stops.
 
 ## The producer/consumer queue
 
